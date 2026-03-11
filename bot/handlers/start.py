@@ -23,10 +23,9 @@ async def cmd_start(message: Message, is_admin: bool) -> None:
 @router.callback_query(F.data == "menu:main")
 async def cb_main_menu(callback: CallbackQuery, is_admin: bool) -> None:
     if not is_admin:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
+        await callback.message.edit_text("⛔ Нет доступа")
         return
     await callback.message.edit_text(
         "📋 Главное меню\n\nВыберите действие:",
         reply_markup=MAIN_MENU,
     )
-    await callback.answer()

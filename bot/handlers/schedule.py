@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.config import settings
 from bot.db.repositories import AdminRepo, ChannelRepo, ScheduledPostRepo
+from bot.utils import format_datetime_local
 from bot.keyboards.calendar import calendar_kb, hour_kb, minute_kb
 from bot.keyboards.inline import MAIN_MENU, scheduled_detail_kb, scheduled_list_kb
 from bot.services.scheduler import cancel_scheduled_job, schedule_post
@@ -26,7 +27,6 @@ async def cb_cal_prev(callback: CallbackQuery) -> None:
     parts = callback.data.split(":")[2].split("-")
     year, month = int(parts[0]), int(parts[1])
     await callback.message.edit_reply_markup(reply_markup=calendar_kb(year, month))
-    await callback.answer()
 
 
 @router.callback_query(BroadcastFSM.picking_date, F.data.startswith("cal:next:"))
@@ -34,14 +34,13 @@ async def cb_cal_next(callback: CallbackQuery) -> None:
     parts = callback.data.split(":")[2].split("-")
     year, month = int(parts[0]), int(parts[1])
     await callback.message.edit_reply_markup(reply_markup=calendar_kb(year, month))
-    await callback.answer()
 
 
 @router.callback_query(BroadcastFSM.picking_date, F.data == "cal:ignore")
 @router.callback_query(BroadcastFSM.picking_hour, F.data == "cal:ignore")
 @router.callback_query(BroadcastFSM.picking_minute, F.data == "cal:ignore")
 async def cb_cal_ignore(callback: CallbackQuery) -> None:
-    await callback.answer()
+    pass
 
 
 # --------------- Day selection ---------------
@@ -54,7 +53,6 @@ async def cb_cal_day(callback: CallbackQuery, state: FSMContext) -> None:
         "🕐 Выберите час публикации:",
         reply_markup=hour_kb(date_str),
     )
-    await callback.answer()
 
 
 # --------------- Hour selection ---------------
@@ -70,7 +68,6 @@ async def cb_cal_hour(callback: CallbackQuery, state: FSMContext) -> None:
         "🕐 Выберите минуты:",
         reply_markup=minute_kb(date_str, hour),
     )
-    await callback.answer()
 
 
 @router.callback_query(BroadcastFSM.picking_hour, F.data.startswith("cal:back_to_cal:"))
@@ -82,7 +79,6 @@ async def cb_back_to_cal(callback: CallbackQuery, state: FSMContext) -> None:
         "📅 Выберите дату публикации:",
         reply_markup=calendar_kb(d.year, d.month),
     )
-    await callback.answer()
 
 
 # --------------- Minute selection (finalize) ---------------
@@ -103,9 +99,8 @@ async def cb_cal_minute(
 
     now = datetime.now(tz)
     if aware_dt <= now:
-        await callback.answer("❌ Это время уже прошло, выберите другое", show_alert=True)
+        await callback.message.edit_text("❌ Это время уже прошло, выберите другое")
         return
-
     data = await state.get_data()
     selected = list(data.get("selected_channels", []))
 
@@ -138,7 +133,6 @@ async def cb_cal_minute(
         reply_markup=MAIN_MENU,
     )
     await state.clear()
-    await callback.answer()
 
 
 @router.callback_query(BroadcastFSM.picking_minute, F.data.startswith("cal:back_to_hour:"))
@@ -149,7 +143,6 @@ async def cb_back_to_hour(callback: CallbackQuery, state: FSMContext) -> None:
         "🕐 Выберите час публикации:",
         reply_markup=hour_kb(date_str),
     )
-    await callback.answer()
 
 
 # --------------- Cancel from any calendar screen ---------------
@@ -160,7 +153,6 @@ async def cb_back_to_hour(callback: CallbackQuery, state: FSMContext) -> None:
 async def cb_cal_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.edit_text("❌ Планирование отменено.", reply_markup=MAIN_MENU)
-    await callback.answer()
 
 
 # --------------- Scheduled posts list/detail/cancel ---------------
@@ -170,7 +162,7 @@ async def cb_schedule_list(
     callback: CallbackQuery, session: AsyncSession, is_admin: bool
 ) -> None:
     if not is_admin:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
+        await callback.message.edit_text("⛔ Нет доступа")
         return
     repo = ScheduledPostRepo(session)
     posts = await repo.get_pending()
@@ -182,7 +174,6 @@ async def cb_schedule_list(
         await callback.message.edit_text(
             "⏰ Отложенные посты:", reply_markup=scheduled_list_kb(posts)
         )
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("schedule:detail:"))
@@ -190,15 +181,14 @@ async def cb_schedule_detail(
     callback: CallbackQuery, session: AsyncSession, is_admin: bool
 ) -> None:
     if not is_admin:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
+        await callback.message.edit_text("⛔ Нет доступа")
         return
     post_id = int(callback.data.split(":")[2])
     repo = ScheduledPostRepo(session)
     post = await repo.get_by_id(post_id)
     if post is None:
-        await callback.answer("Пост не найден", show_alert=True)
+        await callback.message.edit_text("❌ Пост не найден")
         return
-
     channel_repo = ChannelRepo(session)
     channels = await channel_repo.get_all()
     id_to_title = {ch.id: ch.title for ch in channels}
@@ -207,7 +197,7 @@ async def cb_schedule_detail(
     text = (
         f"📋 <b>Отложенный пост #{post.id}</b>\n\n"
         f"📎 Тип: {post.content_type}\n"
-        f"⏰ Публикация: {post.publish_at.strftime('%d.%m.%Y %H:%M')}\n"
+        f"⏰ Публикация: {format_datetime_local(post.publish_at)} (МСК)\n"
         f"📢 Каналы: {ch_names}\n"
         f"📊 Статус: {post.status}"
     )
@@ -218,7 +208,6 @@ async def cb_schedule_detail(
 
     kb = scheduled_detail_kb(post.id)
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("schedule:cancel:"))
@@ -226,17 +215,16 @@ async def cb_schedule_cancel(
     callback: CallbackQuery, session: AsyncSession, is_admin: bool
 ) -> None:
     if not is_admin:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
+        await callback.message.edit_text("⛔ Нет доступа")
         return
     post_id = int(callback.data.split(":")[2])
     repo = ScheduledPostRepo(session)
     cancelled = await repo.cancel(post_id)
     if cancelled:
         cancel_scheduled_job(post_id)
-        await callback.answer("✅ Пост отменён")
     else:
-        await callback.answer("❌ Не удалось отменить пост", show_alert=True)
-
+        await callback.message.edit_text("❌ Не удалось отменить пост")
+        return
     posts = await repo.get_pending()
     if not posts:
         await callback.message.edit_text(
@@ -253,17 +241,15 @@ async def cb_schedule_delete(
     callback: CallbackQuery, session: AsyncSession, is_admin: bool
 ) -> None:
     if not is_admin:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
+        await callback.message.edit_text("⛔ Нет доступа")
         return
     post_id = int(callback.data.split(":")[2])
     cancel_scheduled_job(post_id)
     repo = ScheduledPostRepo(session)
     deleted = await repo.delete_by_id(post_id)
-    if deleted:
-        await callback.answer("🗑 Пост удалён")
-    else:
-        await callback.answer("❌ Пост не найден", show_alert=True)
-
+    if not deleted:
+        await callback.message.edit_text("❌ Пост не найден")
+        return
     posts = await repo.get_pending()
     if not posts:
         await callback.message.edit_text(

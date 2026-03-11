@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.config import settings
 from bot.db.repositories import AdminRepo
 from bot.keyboards.inline import BACK_TO_MENU, admin_detail_kb, admin_list_kb
+from bot.middlewares.auth import invalidate_admin_cache
 
 router = Router()
 
@@ -20,13 +21,12 @@ async def cb_admin_list(
     callback: CallbackQuery, session: AsyncSession, is_admin: bool, is_superadmin: bool
 ) -> None:
     if not is_admin:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
+        await callback.message.edit_text("⛔ Нет доступа")
         return
     repo = AdminRepo(session)
     admins = await repo.get_all()
     kb = admin_list_kb(admins, settings.superadmin_id, is_superadmin)
     await callback.message.edit_text("👥 Список администраторов:", reply_markup=kb)
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("admin:info:"))
@@ -34,13 +34,13 @@ async def cb_admin_info(
     callback: CallbackQuery, session: AsyncSession, is_admin: bool, is_superadmin: bool
 ) -> None:
     if not is_admin:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
+        await callback.message.edit_text("⛔ Нет доступа")
         return
     tg_id = int(callback.data.split(":")[2])
     repo = AdminRepo(session)
     admin = await repo.get_by_telegram_id(tg_id)
     if admin is None:
-        await callback.answer("Админ не найден", show_alert=True)
+        await callback.message.edit_text("❌ Админ не найден")
         return
     role_text = "Суперадмин" if admin.role == "superadmin" else "Админ"
     text = (
@@ -52,7 +52,6 @@ async def cb_admin_info(
     can_delete = is_superadmin and admin.telegram_id != settings.superadmin_id
     kb = admin_detail_kb(admin.telegram_id, can_delete)
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
-    await callback.answer()
 
 
 @router.callback_query(F.data == "admin:add")
@@ -60,14 +59,13 @@ async def cb_admin_add(
     callback: CallbackQuery, is_superadmin: bool, state: FSMContext
 ) -> None:
     if not is_superadmin:
-        await callback.answer("⛔ Только суперадмин может добавлять админов", show_alert=True)
+        await callback.message.edit_text("⛔ Только суперадмин может добавлять админов")
         return
     await callback.message.edit_text(
         "Введите Telegram ID нового админа (числом):",
         reply_markup=BACK_TO_MENU,
     )
     await state.set_state(AdminFSM.waiting_new_admin_id)
-    await callback.answer()
 
 
 @router.message(AdminFSM.waiting_new_admin_id)
@@ -99,6 +97,7 @@ async def process_new_admin_id(
         pass
 
     await repo.create(tg_id, username=username, role="admin")
+    invalidate_admin_cache(tg_id)
     display = f"@{username}" if username else f"ID <code>{tg_id}</code>"
     await message.answer(
         f"✅ Админ {display} успешно добавлен.",
@@ -113,19 +112,18 @@ async def cb_admin_delete(
     callback: CallbackQuery, session: AsyncSession, is_superadmin: bool
 ) -> None:
     if not is_superadmin:
-        await callback.answer("⛔ Только суперадмин может удалять админов", show_alert=True)
+        await callback.message.edit_text("⛔ Только суперадмин может удалять админов")
         return
     tg_id = int(callback.data.split(":")[2])
     if tg_id == settings.superadmin_id:
-        await callback.answer("❌ Нельзя удалить суперадмина", show_alert=True)
+        await callback.message.edit_text("❌ Нельзя удалить суперадмина")
         return
     repo = AdminRepo(session)
     deleted = await repo.delete_by_telegram_id(tg_id)
-    if deleted:
-        await callback.answer("✅ Админ удалён")
-    else:
-        await callback.answer("❌ Админ не найден", show_alert=True)
-
+    if not deleted:
+        await callback.message.edit_text("❌ Админ не найден")
+        return
+    invalidate_admin_cache(tg_id)
     admins = await repo.get_all()
     kb = admin_list_kb(admins, settings.superadmin_id, is_superadmin)
     await callback.message.edit_text("👥 Список администраторов:", reply_markup=kb)

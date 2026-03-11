@@ -91,7 +91,7 @@ async def cb_broadcast_start(
     callback: CallbackQuery, is_admin: bool, state: FSMContext
 ) -> None:
     if not is_admin:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
+        await callback.message.edit_text("⛔ Нет доступа")
         return
     await state.set_state(BroadcastFSM.waiting_content)
     await callback.message.edit_text(
@@ -101,7 +101,6 @@ async def cb_broadcast_start(
         parse_mode="HTML",
         reply_markup=BACK_TO_MENU,
     )
-    await callback.answer()
 
 
 @router.message(BroadcastFSM.waiting_content)
@@ -175,7 +174,6 @@ async def cb_toggle_channel_selection(
     kb = channel_select_kb(channels, selected)
 
     await callback.message.edit_reply_markup(reply_markup=kb)
-    await callback.answer()
 
 
 @router.callback_query(BroadcastFSM.choosing_channels, F.data == "bcast:select_all")
@@ -188,7 +186,6 @@ async def cb_select_all(
     await state.update_data(selected_channels=list(selected))
     kb = channel_select_kb(channels, selected)
     await callback.message.edit_reply_markup(reply_markup=kb)
-    await callback.answer()
 
 
 @router.callback_query(BroadcastFSM.choosing_channels, F.data == "bcast:deselect_all")
@@ -200,7 +197,6 @@ async def cb_deselect_all(
     channels = await repo.get_all(active_only=True)
     kb = channel_select_kb(channels, set())
     await callback.message.edit_reply_markup(reply_markup=kb)
-    await callback.answer()
 
 
 @router.callback_query(BroadcastFSM.choosing_channels, F.data == "bcast:send_now")
@@ -214,9 +210,8 @@ async def cb_send_now(
     selected = _get_selected(data)
 
     if not selected:
-        await callback.answer("❌ Выберите хотя бы один канал", show_alert=True)
+        await callback.message.edit_text("❌ Выберите хотя бы один канал")
         return
-
     repo = ChannelRepo(session)
     channels = await repo.get_all(active_only=True)
     id_to_chat = {ch.id: ch.telegram_chat_id for ch in channels}
@@ -225,7 +220,6 @@ async def cb_send_now(
     target_chat_ids = [id_to_chat[cid] for cid in selected if cid in id_to_chat]
 
     await callback.message.edit_text("⏳ Отправка...")
-    await callback.answer()
 
     results = await broadcast_to_channels(
         bot,
@@ -261,7 +255,7 @@ async def cb_schedule(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     selected = _get_selected(data)
     if not selected:
-        await callback.answer("❌ Выберите хотя бы один канал", show_alert=True)
+        await callback.message.edit_text("❌ Выберите хотя бы один канал")
         return
     tz = pytz.timezone(settings.timezone)
     now = datetime.now(tz)
@@ -270,7 +264,6 @@ async def cb_schedule(callback: CallbackQuery, state: FSMContext) -> None:
         "📅 Выберите дату публикации:",
         reply_markup=calendar_kb(now.year, now.month),
     )
-    await callback.answer()
 
 
 @router.callback_query(BroadcastFSM.choosing_channels, F.data == "bcast:cancel")
@@ -280,4 +273,3 @@ async def cb_cancel_broadcast(callback: CallbackQuery, state: FSMContext) -> Non
         "❌ Рассылка отменена.",
         reply_markup=MAIN_MENU,
     )
-    await callback.answer()

@@ -29,7 +29,7 @@ async def cb_channel_list(
     callback: CallbackQuery, session: AsyncSession, is_admin: bool
 ) -> None:
     if not is_admin:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
+        await callback.message.edit_text("⛔ Нет доступа")
         return
     repo = ChannelRepo(session)
     channels = await repo.get_all()
@@ -39,7 +39,6 @@ async def cb_channel_list(
         text = "📢 Подключённые каналы:"
     kb = channel_list_kb(channels)
     await callback.message.edit_text(text, reply_markup=kb)
-    await callback.answer()
 
 
 @router.callback_query(F.data == "channels:add")
@@ -47,7 +46,7 @@ async def cb_channel_add(
     callback: CallbackQuery, is_admin: bool, state: FSMContext
 ) -> None:
     if not is_admin:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
+        await callback.message.edit_text("⛔ Нет доступа")
         return
     await state.set_state(ChannelFSM.adding_channels)
     await callback.message.answer(
@@ -56,7 +55,6 @@ async def cb_channel_add(
         "Когда закончите, нажмите «✅ Готово».",
         reply_markup=channel_request_kb(),
     )
-    await callback.answer()
 
 
 @router.message(ChannelFSM.adding_channels, F.chat_shared)
@@ -135,13 +133,13 @@ async def cb_channel_detail(
     callback: CallbackQuery, session: AsyncSession, is_admin: bool
 ) -> None:
     if not is_admin:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
+        await callback.message.edit_text("⛔ Нет доступа")
         return
     channel_id = int(callback.data.split(":")[2])
     repo = ChannelRepo(session)
     channel = await repo.get_by_id(channel_id)
     if channel is None:
-        await callback.answer("Канал не найден", show_alert=True)
+        await callback.message.edit_text("❌ Канал не найден")
         return
     status = "Активен ✅" if channel.is_active else "Отключён ❌"
     text = (
@@ -152,7 +150,6 @@ async def cb_channel_detail(
     )
     kb = channel_detail_kb(channel)
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("channels:toggle:"))
@@ -160,17 +157,14 @@ async def cb_channel_toggle(
     callback: CallbackQuery, session: AsyncSession, is_admin: bool
 ) -> None:
     if not is_admin:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
+        await callback.message.edit_text("⛔ Нет доступа")
         return
     channel_id = int(callback.data.split(":")[2])
     repo = ChannelRepo(session)
     channel = await repo.toggle_active(channel_id)
     if channel is None:
-        await callback.answer("Канал не найден", show_alert=True)
+        await callback.message.edit_text("❌ Канал не найден")
         return
-    state_text = "включён ✅" if channel.is_active else "отключён ❌"
-    await callback.answer(f"Канал {state_text}")
-
     status = "Активен ✅" if channel.is_active else "Отключён ❌"
     text = (
         f"📢 <b>{channel.title}</b>\n"
@@ -187,16 +181,14 @@ async def cb_channel_delete(
     callback: CallbackQuery, session: AsyncSession, is_admin: bool
 ) -> None:
     if not is_admin:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
+        await callback.message.edit_text("⛔ Нет доступа")
         return
     channel_id = int(callback.data.split(":")[2])
     repo = ChannelRepo(session)
     deleted = await repo.delete_by_id(channel_id)
-    if deleted:
-        await callback.answer("✅ Канал удалён")
-    else:
-        await callback.answer("❌ Канал не найден", show_alert=True)
-
+    if not deleted:
+        await callback.message.edit_text("❌ Канал не найден")
+        return
     channels = await repo.get_all()
     kb = channel_list_kb(channels)
     text = "📢 Подключённые каналы:" if channels else "📢 Каналы не подключены."

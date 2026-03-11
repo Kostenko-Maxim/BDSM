@@ -11,5 +11,14 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  bot:
+    build: .
+    container_name: bdsm_bot
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_started
+    restart: always
+
 volumes:
   pgdata:

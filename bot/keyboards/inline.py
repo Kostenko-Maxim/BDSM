@@ -9,6 +9,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.db.models import Channel, ScheduledPost
+from bot.utils import format_datetime_local
 
 REMOVE_REPLY_KB = ReplyKeyboardRemove()
 
@@ -143,7 +144,7 @@ BACK_TO_MENU = InlineKeyboardMarkup(
 def scheduled_list_kb(posts: list[ScheduledPost]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for post in posts:
-        time_str = post.publish_at.strftime("%d.%m.%Y %H:%M")
+        time_str = format_datetime_local(post.publish_at)
         label = f"⏰ {time_str} — {post.content_type}"
         builder.row(
             InlineKeyboardButton(

@@ -9,6 +9,7 @@ from bot.db.models import Base
 from bot.handlers import get_all_routers
 from bot.loader import bot
 from bot.middlewares.auth import AdminMiddleware
+from bot.middlewares.early_answer import EarlyAnswerMiddleware
 from bot.services.scheduler import restore_pending_jobs, scheduler
 
 logging.basicConfig(
@@ -37,9 +38,10 @@ async def on_shutdown() -> None:
     logger.info("Bot stopped")
 
 
-async def main() -> None:
+def setup_dispatcher() -> Dispatcher:
     dp = Dispatcher(storage=MemoryStorage())
 
+    dp.update.outer_middleware(EarlyAnswerMiddleware())
     dp.message.middleware(AdminMiddleware())
     dp.callback_query.middleware(AdminMiddleware())
 
@@ -48,7 +50,11 @@ async def main() -> None:
 
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
+    return dp
 
+
+async def main() -> None:
+    dp = setup_dispatcher()
     await dp.start_polling(bot)
 
 
